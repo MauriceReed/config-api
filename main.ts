@@ -6,6 +6,7 @@ const GEO_LINKS: Record<string, string> = {
   "es_ES": "https://track.spartaaffiliates.com/visit/?bta=36172&nci=5490&afp10=ASO&afp1={subid}&pathid=WinbeatzASOChick",
   "it_IT": "https://track.spartaaffiliates.com/visit/?bta=36172&nci=5490&afp10=ASO&afp1={subid}&pathid=WinbeatzASOChick",
   "en_CA": "https://track.spartaaffiliates.com/visit/?bta=36172&nci=5490&afp10=ASO&afp1={subid}&pathid=WinbeatzASOChick",
+  "en_US": "https://track.spartaaffiliates.com/visit/?bta=36172&nci=5490&afp10=ASO&afp1={subid}&pathid=WinbeatzASOChick",
 };
 
 function isReviewMode(): boolean {
