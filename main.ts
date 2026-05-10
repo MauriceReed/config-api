@@ -1,33 +1,32 @@
-// Открываем KV-хранилище (бесплатно в Deno Deploy)
-const kv = await Deno.openKv();
-
 const MAIN_URL = Deno.env.get("MAIN_URL") || "https://web.team-s.club";
 const SECRET_KEY = Deno.env.get("SECRET_KEY") || "change-me-123";
+
+// Эта функция вызывается при КАЖДОМ запросе и читает свежее значение из env
+function isReviewMode(): boolean {
+  const envValue = Deno.env.get("REVIEW_MODE");
+  // Если переменная не задана или равна "true" — режим ревью включён
+  return envValue !== "false";
+}
 
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
 
-  // ===== ПЕРЕКЛЮЧЕНИЕ ФЛАГА (теперь через KV) =====
+  // ===== СЕКРЕТНАЯ РУЧКА ПЕРЕКЛЮЧЕНИЯ (через env менять не можем из кода,
+  //       поэтому просто показываем инструкцию) =====
   if (url.pathname === "/toggle") {
     const key = url.searchParams.get("key");
     if (key !== SECRET_KEY) {
       return new Response("Unauthorized", { status: 403 });
     }
 
-    const mode = url.searchParams.get("mode");
-    
-    if (mode === "on") {
-      await kv.set(["review_mode"], true);
-      return new Response("REVIEW MODE ON — will return ok: false");
-    } else if (mode === "off") {
-      await kv.set(["review_mode"], false);
-      return new Response(`REVIEW MODE OFF — will return url: ${MAIN_URL}`);
-    }
-
-    // Без mode — показать текущее состояние
-    const current = await kv.get(["review_mode"]);
-    const isReview = current.value !== false; // по умолчанию true
-    return new Response(`Current mode: ${isReview ? "REVIEW (ok: false)" : "LIVE (returns MAIN_URL)"}`);
+    const currentMode = isReviewMode();
+    return new Response(
+      `Current mode: ${currentMode ? "REVIEW (ok: false)" : "LIVE (returns MAIN_URL)"}\n\n` +
+      `To change mode:\n` +
+      `1. Go to Deno Deploy Dashboard → Settings → Environment Variables\n` +
+      `2. Set REVIEW_MODE to "false" (to go LIVE) or "true" (for review)\n` +
+      `3. Changes apply within seconds to all instances`
+    );
   }
 
   // ===== ОСНОВНОЙ ЭНДПОИНТ =====
@@ -35,11 +34,8 @@ Deno.serve(async (req: Request) => {
     return new Response("Not Found", { status: 404 });
   }
 
-  // Читаем флаг из KV (доступно всем экземплярам)
-  const result = await kv.get(["review_mode"]);
-  const isReviewMode = result.value !== false; // если нет записи — считаем что ревью
-
-  if (isReviewMode) {
+  // При каждом запросе читаем свежее значение
+  if (isReviewMode()) {
     return new Response(JSON.stringify({ ok: false }), {
       headers: { "Content-Type": "application/json" }
     });
