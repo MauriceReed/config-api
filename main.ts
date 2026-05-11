@@ -33,12 +33,20 @@ async function getCountryByIP(ip: string): Promise<string> {
 
 // Извлечение IP клиента
 function getClientIP(req: Request): string {
+  // Deno Deploy иногда даёт IP напрямую
+  const denoIP = (req as any).ip;
+  if (denoIP && typeof denoIP === "string") return denoIP;
+  
+  // Стандартные заголовки
   const xForwarded = req.headers.get("x-forwarded-for");
-  if (xForwarded) {
-    return xForwarded.split(",")[0].trim();
-  }
+  if (xForwarded) return xForwarded.split(",")[0].trim();
+  
   const xReal = req.headers.get("x-real-ip");
   if (xReal) return xReal.trim();
+  
+  // Последняя надежда — берём из RemoteAddr (если доступен)
+  const remoteAddr = (req as any).remoteAddr;
+  if (remoteAddr && typeof remoteAddr === "string") return remoteAddr;
   
   return "";
 }
