@@ -13,9 +13,8 @@ function isReviewMode(): boolean {
   return Deno.env.get("REVIEW_MODE") !== "false";
 }
 
-// Получение страны через ipinfo.io
 async function getCountryByIP(ip: string): Promise<string> {
-  if (!IPINFO_TOKEN) return "";
+  if (!IPINFO_TOKEN || !ip) return "";
   
   try {
     const resp = await fetch(`https://ipinfo.io/${ip}?token=${IPINFO_TOKEN}`, {
@@ -31,22 +30,26 @@ async function getCountryByIP(ip: string): Promise<string> {
   return "";
 }
 
-// Извлечение IP клиента
 function getClientIP(req: Request): string {
-  // Deno Deploy иногда даёт IP напрямую
-  const denoIP = (req as any).ip;
+  // Способ 1: свойство .ip у Deno Request
+  const denoIP = (req as any).ip || (req as any).remoteAddr;
   if (denoIP && typeof denoIP === "string") return denoIP;
   
-  // Стандартные заголовки
-  const xForwarded = req.headers.get("x-forwarded-for");
-  if (xForwarded) return xForwarded.split(",")[0].trim();
+  // Способ 2: x-forwarded-for
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0].trim();
   
-  const xReal = req.headers.get("x-real-ip");
-  if (xReal) return xReal.trim();
+  // Способ 3: x-real-ip
+  const xri = req.headers.get("x-real-ip");
+  if (xri) return xri.trim();
   
-  // Последняя надежда — берём из RemoteAddr (если доступен)
-  const remoteAddr = (req as any).remoteAddr;
-  if (remoteAddr && typeof remoteAddr === "string") return remoteAddr;
+  // Способ 4: cf-connecting-ip
+  const cf = req.headers.get("cf-connecting-ip");
+  if (cf) return cf.trim();
+  
+  // Способ 5: fly-client-ip
+  const fly = req.headers.get("fly-client-ip");
+  if (fly) return fly.trim();
   
   return "";
 }
@@ -75,19 +78,31 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // === ДИАГНОСТИКА: выводим все заголовки ===
+  const allHeaders: Record<string, string> = {};
+  req.headers.forEach((value, key) => {
+    allHeaders[key] = value;
+  });
+  console.log("ALL HEADERS:", JSON.stringify(allHeaders, null, 2));
+  console.log("req.ip:", (req as any).ip);
+  console.log("req.remoteAddr:", (req as any).remoteAddr);
+  console.log("req.url:", req.url);
+  console.log("req.method:", req.method);
+  // === КОНЕЦ ДИАГНОСТИКИ ===
+
   // Определяем страну
   let country = Deno.env.get("TEST_COUNTRY") || "";
   
   if (!country) {
     const ip = getClientIP(req);
+    console.log("EXTRACTED IP:", ip || "EMPTY");
     if (ip) {
       country = await getCountryByIP(ip);
     }
   }
 
-  console.log(`IP: ${getClientIP(req)}, Country: ${country || "unknown"}`);
+  console.log(`FINAL: IP=${getClientIP(req) || "none"}, Country=${country || "unknown"}`);
 
-  // Ищем в таблице
   if (country && GEO_LINKS[country]) {
     return new Response(JSON.stringify({ ok: true, url: GEO_LINKS[country] }), {
       headers: { "Content-Type": "application/json" }
