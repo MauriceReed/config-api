@@ -48,6 +48,15 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // Временная диагностика — показать все заголовки CF-*
+const cfHeaders: Record<string, string> = {};
+req.headers.forEach((value, key) => {
+  if (key.toLowerCase().startsWith("cf-")) {
+    cfHeaders[key] = value;
+  }
+});
+console.log("CF Headers:", JSON.stringify(cfHeaders));
+
   // Страна не определена или нет в таблице
   console.log(`Country: ${country || "unknown"} → REJECTED`);
   return new Response(JSON.stringify({ ok: false }), {
