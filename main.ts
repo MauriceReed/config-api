@@ -1,6 +1,6 @@
 const SECRET_KEY = Deno.env.get("SECRET_KEY") || "change-me-123";
+const IPINFO_TOKEN = Deno.env.get("IPINFO_TOKEN") || "";
 
-// Таблица ГЕО-ссылок (ключи — ISO alpha-2 коды стран)
 const GEO_LINKS: Record<string, string> = {
   "GB": "https://track.ftdhunters.com/visit/?bta=35073&nci=5343&utm_campaign=&afp10=ASO&afp1={subid}&pathid=RPBAsoCrash",
   "DE": "https://track.spartaaffiliates.com/visit/?bta=36172&nci=5490&afp10=ASO&afp1={subid}&pathid=WinbeatzASOChick",
@@ -11,6 +11,36 @@ const GEO_LINKS: Record<string, string> = {
 
 function isReviewMode(): boolean {
   return Deno.env.get("REVIEW_MODE") !== "false";
+}
+
+// Получение страны через ipinfo.io
+async function getCountryByIP(ip: string): Promise<string> {
+  if (!IPINFO_TOKEN) return "";
+  
+  try {
+    const resp = await fetch(`https://ipinfo.io/${ip}?token=${IPINFO_TOKEN}`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      return (data.country || "").toUpperCase();
+    }
+  } catch {
+    //
+  }
+  return "";
+}
+
+// Извлечение IP клиента
+function getClientIP(req: Request): string {
+  const xForwarded = req.headers.get("x-forwarded-for");
+  if (xForwarded) {
+    return xForwarded.split(",")[0].trim();
+  }
+  const xReal = req.headers.get("x-real-ip");
+  if (xReal) return xReal.trim();
+  
+  return "";
 }
 
 Deno.serve(async (req: Request) => {
@@ -25,7 +55,7 @@ Deno.serve(async (req: Request) => {
     return new Response(isReviewMode() ? "review" : "live");
   }
 
-  // Основной эндпоинт — только POST
+  // Основной эндпоинт
   if (req.method !== "POST") {
     return new Response("", { status: 404 });
   }
@@ -37,28 +67,25 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Достаём страну из заголовка Cloudflare
-  const country = req.headers.get("CF-IPCountry") || "";
+  // Определяем страну
+  let country = Deno.env.get("TEST_COUNTRY") || "";
+  
+  if (!country) {
+    const ip = getClientIP(req);
+    if (ip) {
+      country = await getCountryByIP(ip);
+    }
+  }
+
+  console.log(`IP: ${getClientIP(req)}, Country: ${country || "unknown"}`);
 
   // Ищем в таблице
   if (country && GEO_LINKS[country]) {
-    console.log(`Country: ${country} → ${GEO_LINKS[country]}`);
     return new Response(JSON.stringify({ ok: true, url: GEO_LINKS[country] }), {
       headers: { "Content-Type": "application/json" }
     });
   }
 
-  // Временная диагностика — показать все заголовки CF-*
-const cfHeaders: Record<string, string> = {};
-req.headers.forEach((value, key) => {
-  if (key.toLowerCase().startsWith("cf-")) {
-    cfHeaders[key] = value;
-  }
-});
-console.log("CF Headers:", JSON.stringify(cfHeaders));
-
-  // Страна не определена или нет в таблице
-  console.log(`Country: ${country || "unknown"} → REJECTED`);
   return new Response(JSON.stringify({ ok: false }), {
     headers: { "Content-Type": "application/json" }
   });
